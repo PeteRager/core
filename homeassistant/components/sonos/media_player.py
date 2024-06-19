@@ -552,6 +552,31 @@ class SonosMediaPlayerEntity(SonosEntity, MediaPlayerEntity):
             partial(self._play_media, media_type, media_id, is_radio, **kwargs)
         )
 
+    @soco_error()
+    def _play_media(
+        self, media_type: MediaType | str, media_id: str, is_radio: bool, **kwargs: Any
+    ) -> None:
+        """Wrap sync calls to async_play_media."""
+        _LOGGER.debug("_play_media media_type %s media_id %s", media_type, media_id)
+        enqueue = kwargs.get(ATTR_MEDIA_ENQUEUE, MediaPlayerEnqueue.REPLACE)
+        soco = self.coordinator.soco
+        share_link = self.coordinator.share_link
+
+        if media_type == "favorite_item_id":
+            self._play_media_favorite_item_id(soco, media_id)
+        elif media_id and media_id.startswith(PLEX_URI_SCHEME):
+            self._play_media_plex(soco, media_type, media_id, enqueue)
+        elif share_link.is_share_link(media_id):
+            self._play_media_share_link(soco, share_link, media_id, enqueue)
+        elif media_type in {MediaType.MUSIC, MediaType.TRACK}:
+            self._play_media_track(soco, media_id, enqueue, is_radio)
+        elif media_type == MediaType.PLAYLIST:
+            self._play_media_playlist(soco, media_type, media_id)
+        elif media_type in PLAYABLE_MEDIA_TYPES:
+            self._play_media_playable_types(soco, media_type, media_id, enqueue)
+        else:
+            _LOGGER.error('Sonos does not support a media type of "%s"', media_type)
+
     def _play_media_plex(
         self,
         soco: SoCo,
@@ -660,31 +685,6 @@ class SonosMediaPlayerEntity(SonosEntity, MediaPlayerEntity):
         if favorite is None:
             raise ValueError(f"Missing favorite for media_id: {media_id}")
         self._play_favorite(favorite)
-
-    @soco_error()
-    def _play_media(
-        self, media_type: MediaType | str, media_id: str, is_radio: bool, **kwargs: Any
-    ) -> None:
-        """Wrap sync calls to async_play_media."""
-        _LOGGER.debug("_play_media media_type %s media_id %s", media_type, media_id)
-        enqueue = kwargs.get(ATTR_MEDIA_ENQUEUE, MediaPlayerEnqueue.REPLACE)
-        soco = self.coordinator.soco
-        share_link = self.coordinator.share_link
-
-        if media_type == "favorite_item_id":
-            self._play_media_favorite_item_id(soco, media_id)
-        elif media_id and media_id.startswith(PLEX_URI_SCHEME):
-            self._play_media_plex(soco, media_type, media_id, enqueue)
-        elif share_link.is_share_link(media_id):
-            self._play_media_share_link(soco, share_link, media_id, enqueue)
-        elif media_type in {MediaType.MUSIC, MediaType.TRACK}:
-            self._play_media_track(soco, media_id, enqueue, is_radio)
-        elif media_type == MediaType.PLAYLIST:
-            self._play_media_playlist(soco, media_type, media_id)
-        elif media_type in PLAYABLE_MEDIA_TYPES:
-            self._play_media_playable_types(soco, media_type, media_id, enqueue)
-        else:
-            _LOGGER.error('Sonos does not support a media type of "%s"', media_type)
 
     def _play_media_queue(
         self, soco: SoCo, item: MusicServiceItem, enqueue: MediaPlayerEnqueue
