@@ -561,7 +561,6 @@ class SonosMediaPlayerEntity(SonosEntity, MediaPlayerEntity):
         enqueue = kwargs.get(ATTR_MEDIA_ENQUEUE, MediaPlayerEnqueue.REPLACE)
         share_link = self.coordinator.share_link
         soco = self.coordinator.soco
-
         if media_type == "favorite_item_id":
             self._play_media_favorite_item_id(soco, media_id)
         elif media_id and media_id.startswith(PLEX_URI_SCHEME):
