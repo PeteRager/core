@@ -559,8 +559,8 @@ class SonosMediaPlayerEntity(SonosEntity, MediaPlayerEntity):
         """Wrap sync calls to async_play_media."""
         _LOGGER.debug("_play_media media_type %s media_id %s", media_type, media_id)
         enqueue = kwargs.get(ATTR_MEDIA_ENQUEUE, MediaPlayerEnqueue.REPLACE)
-        soco = self.coordinator.soco
         share_link = self.coordinator.share_link
+        soco = self.coordinator.soco
 
         if media_type == "favorite_item_id":
             self._play_media_favorite_item_id(soco, media_id)
@@ -576,6 +576,12 @@ class SonosMediaPlayerEntity(SonosEntity, MediaPlayerEntity):
             self._play_media_playable_types(soco, media_type, media_id, enqueue)
         else:
             _LOGGER.error('Sonos does not support a media type of "%s"', media_type)
+
+    def _play_media_favorite_item_id(self, soco: SoCo, media_id: str) -> None:
+        favorite = self.speaker.favorites.lookup_by_item_id(media_id)
+        if favorite is None:
+            raise ValueError(f"Missing favorite for media_id: {media_id}")
+        self._play_favorite(favorite)
 
     def _play_media_plex(
         self,
@@ -679,12 +685,6 @@ class SonosMediaPlayerEntity(SonosEntity, MediaPlayerEntity):
             _LOGGER.error('Could not find "%s" in the library', media_id)
             return
         self._play_media_queue(soco, item, enqueue)
-
-    def _play_media_favorite_item_id(self, soco: SoCo, media_id: str) -> None:
-        favorite = self.speaker.favorites.lookup_by_item_id(media_id)
-        if favorite is None:
-            raise ValueError(f"Missing favorite for media_id: {media_id}")
-        self._play_favorite(favorite)
 
     def _play_media_queue(
         self, soco: SoCo, item: MusicServiceItem, enqueue: MediaPlayerEnqueue
