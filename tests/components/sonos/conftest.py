@@ -252,9 +252,27 @@ def soco_sharelink():
         yield mock_instance
 
 
+@pytest.fixture(name="sonos_websocket")
+def sonos_websocket():
+    """Fixture to mock SonosWebSocket."""
+    with patch(
+        "homeassistant.components.sonos.speaker.SonosWebsocket"
+    ) as mock_sonos_ws:
+        mock_instance = AsyncMock()
+        mock_instance.play_clip = AsyncMock()
+        mock_instance.play_clip.return_value = [{"success": 1}, {}]
+        mock_sonos_ws.return_value = mock_instance
+        yield mock_instance
+
+
 @pytest.fixture(name="soco_factory")
 def soco_factory(
-    music_library, speaker_info, current_track_info_empty, battery_info, alarm_clock
+    music_library,
+    speaker_info,
+    current_track_info_empty,
+    battery_info,
+    alarm_clock,
+    sonos_websocket,
 ):
     """Create factory for instantiating SoCo mocks."""
     factory = SoCoMockFactory(

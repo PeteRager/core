@@ -177,6 +177,9 @@
   "exceptions": {
     "invalid_favorite": {
       "message": "Could not find a Sonos favorite: {name}"
+    },
+    "websocket_error": {
+      "message": "Announcing clip {media_id} failed {response}"
     }
   }
 }
