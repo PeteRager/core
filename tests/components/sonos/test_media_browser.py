@@ -4,8 +4,14 @@ from functools import partial
 
 from syrupy import SnapshotAssertion
 
-from homeassistant.components.media_player import BrowseMedia, MediaClass, MediaType
-from homeassistant.components.media_player.const import ATTR_MEDIA_CONTENT_ID, ATTR_MEDIA_CONTENT_TYPE
+from homeassistant.components.media_player import (
+    ATTR_MEDIA_CONTENT_ID,
+    ATTR_MEDIA_CONTENT_TYPE,
+    BrowseMedia,
+    MediaClass,
+    MediaType,
+)
+from homeassistant.components.sonos.const import SONOS_PLAYLISTS
 from homeassistant.components.sonos.media_browser import (
     build_item_response,
     get_thumbnail_url_full,
@@ -179,6 +185,7 @@ async def test_browse_media_library_albums(
     assert response["result"]["children"] == snapshot
     assert soco_mock.music_library.browse_by_idstring.call_count == 1
 
+
 async def test_browse_sonos_playlists(
     hass: HomeAssistant,
     soco_factory: SoCoMockFactory,
@@ -196,7 +203,7 @@ async def test_browse_sonos_playlists(
             "type": "media_player/browse_media",
             ATTR_ENTITY_ID: "media_player.zone_a",
             ATTR_MEDIA_CONTENT_ID: "",
-            ATTR_MEDIA_CONTENT_TYPE: "sonos-playlists",
+            ATTR_MEDIA_CONTENT_TYPE: SONOS_PLAYLISTS,
         }
     )
     response = await client.receive_json()

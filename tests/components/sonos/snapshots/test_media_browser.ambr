@@ -135,7 +135,7 @@
       'children_media_class': None,
       'media_class': 'directory',
       'media_content_id': '',
-      'media_content_type': 'sonos-playlists',
+      'media_content_type': 'playlists',
       'thumbnail': 'https://brands.home-assistant.io/_/sonos/logo.png',
       'title': 'Playlists',
     }),

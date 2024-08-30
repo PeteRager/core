@@ -32,6 +32,7 @@ from .const import (
     SONOS_ALBUM,
     SONOS_ALBUM_ARTIST,
     SONOS_GENRE,
+    SONOS_PLAYLISTS,
     SONOS_TO_MEDIA_CLASSES,
     SONOS_TO_MEDIA_TYPES,
     SONOS_TRACKS,
@@ -167,7 +168,7 @@ async def async_browse_media(
             media_content_id,
         )
 
-    if media_content_type == "sonos-playlists":
+    if media_content_type == SONOS_PLAYLISTS:
         return await hass.async_add_executor_job(
             sonos_playlists_payload,
             speaker,
@@ -331,7 +332,7 @@ async def root_payload(
                 title="Playlists",
                 media_class=MediaClass.DIRECTORY,
                 media_content_id="",
-                media_content_type="sonos-playlists",
+                media_content_type=SONOS_PLAYLISTS,
                 thumbnail="https://brands.home-assistant.io/_/sonos/logo.png",
                 can_play=False,
                 can_expand=True,
@@ -507,7 +508,7 @@ def sonos_playlists_payload(
             title=playlist.title,
             media_class=SONOS_TO_MEDIA_CLASSES[playlist.item_class],
             media_content_id=playlist.title,
-            media_content_type="playlist",
+            media_content_type=MediaType.PLAYLIST,
             can_play=True,
             can_expand=False,
             thumbnail=getattr(playlist, "album_art_uri", None),
