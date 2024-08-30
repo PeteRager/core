@@ -192,7 +192,7 @@ async def test_browse_sonos_playlists(
     hass_ws_client: WebSocketGenerator,
     snapshot: SnapshotAssertion,
 ) -> None:
-    """Test the browsing Sonos Playlists."""
+    """Test browsing Sonos Playlists."""
     soco_mock = soco_factory.mock_list.get("192.168.42.2")
     client = await hass_ws_client()
     await client.send_json_auto_id(
