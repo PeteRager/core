@@ -167,6 +167,13 @@ async def async_browse_media(
             media_content_id,
         )
 
+    if media_content_type == "sonos-playlists":
+        return await hass.async_add_executor_job(
+            sonos_playlists_payload,
+            speaker,
+            media_content_id,
+        )
+
     payload = {
         "search_type": media_content_type,
         "idstring": media_content_id,
@@ -312,6 +319,19 @@ async def root_payload(
                 media_class=MediaClass.DIRECTORY,
                 media_content_id="",
                 media_content_type="favorites",
+                thumbnail="https://brands.home-assistant.io/_/sonos/logo.png",
+                can_play=False,
+                can_expand=True,
+            )
+        )
+
+    if await hass.async_add_executor_job(partial(speaker.soco.get_sonos_playlists)):
+        children.append(
+            BrowseMedia(
+                title="Playlists",
+                media_class=MediaClass.DIRECTORY,
+                media_content_id="",
+                media_content_type="sonos-playlists",
                 thumbnail="https://brands.home-assistant.io/_/sonos/logo.png",
                 can_play=False,
                 can_expand=True,
@@ -472,6 +492,33 @@ def favorites_folder_payload(
         media_class=MediaClass.DIRECTORY,
         media_content_id="",
         media_content_type="favorites",
+        can_play=False,
+        can_expand=True,
+        children=children,
+    )
+
+
+def sonos_playlists_payload(
+    speaker: SonosSpeaker, media_content_id: str
+) -> BrowseMedia:
+    """Create response payload to describe all items of a type of sonos playlist."""
+    children: list[BrowseMedia] = [
+        BrowseMedia(
+            title=playlist.title,
+            media_class=SONOS_TO_MEDIA_CLASSES[playlist.item_class],
+            media_content_id=playlist.title,
+            media_content_type="playlist",
+            can_play=True,
+            can_expand=False,
+            thumbnail=getattr(playlist, "album_art_uri", None),
+        )
+        for playlist in speaker.soco.get_sonos_playlists()
+    ]
+    return BrowseMedia(
+        title="playlists",
+        media_class=MediaClass.DIRECTORY,
+        media_content_id="",
+        media_content_type="playlists",
         can_play=False,
         can_expand=True,
         children=children,
