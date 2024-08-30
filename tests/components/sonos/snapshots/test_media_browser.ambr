@@ -151,3 +151,17 @@
     }),
   ])
 # ---
+# name: test_browse_sonos_playlists
+  list([
+    dict({
+      'can_expand': False,
+      'can_play': True,
+      'children_media_class': None,
+      'media_class': 'playlist',
+      'media_content_id': 'sample playlist',
+      'media_content_type': 'playlist',
+      'thumbnail': None,
+      'title': 'sample playlist',
+    }),
+  ])
+# ---
