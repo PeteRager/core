@@ -326,7 +326,7 @@ async def root_payload(
             )
         )
 
-    if await hass.async_add_executor_job(partial(speaker.soco.get_sonos_playlists)):
+    if await hass.async_add_executor_job(speaker.soco.get_sonos_playlists):
         children.append(
             BrowseMedia(
                 title="Playlists",
