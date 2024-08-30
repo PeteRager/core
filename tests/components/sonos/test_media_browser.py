@@ -19,7 +19,7 @@ from homeassistant.components.sonos.media_browser import (
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
 
-from .conftest import SoCoMockFactory
+from .conftest import MockSoCo, SoCoMockFactory
 
 from tests.typing import WebSocketGenerator
 
@@ -187,13 +187,12 @@ async def test_browse_media_library_albums(
 
 
 async def test_browse_sonos_playlists(
-    soco_factory: SoCoMockFactory,
     async_autosetup_sonos,
+    soco : MockSoCo,
     hass_ws_client: WebSocketGenerator,
     snapshot: SnapshotAssertion,
 ) -> None:
     """Test browsing Sonos Playlists."""
-    soco_mock = soco_factory.mock_list.get("192.168.42.2")
     client = await hass_ws_client()
     await client.send_json_auto_id(
         {
@@ -206,4 +205,4 @@ async def test_browse_sonos_playlists(
     response = await client.receive_json()
     assert response["success"]
     assert response["result"]["children"] == snapshot
-    assert soco_mock.get_sonos_playlists.call_count == 1
+    assert soco.get_sonos_playlists.call_count == 1
