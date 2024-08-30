@@ -187,15 +187,12 @@ async def test_browse_media_library_albums(
 
 
 async def test_browse_sonos_playlists(
-    hass: HomeAssistant,
     soco_factory: SoCoMockFactory,
     async_autosetup_sonos,
-    soco,
-    discover,
     hass_ws_client: WebSocketGenerator,
     snapshot: SnapshotAssertion,
 ) -> None:
-    """Test the async_browse_media method."""
+    """Test the browsing Sonos Playlists."""
     soco_mock = soco_factory.mock_list.get("192.168.42.2")
     client = await hass_ws_client()
     await client.send_json_auto_id(

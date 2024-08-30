@@ -502,7 +502,7 @@ def favorites_folder_payload(
 def sonos_playlists_payload(
     speaker: SonosSpeaker, media_content_id: str
 ) -> BrowseMedia:
-    """Create response payload to describe all items of a type of sonos playlist."""
+    """Create response payload with list of sonos playlists."""
     children: list[BrowseMedia] = [
         BrowseMedia(
             title=playlist.title,
