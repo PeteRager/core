@@ -34,7 +34,11 @@ from homeassistant.components.climate import (
     HVACMode,
 )
 from homeassistant.components.zwave_js.climate import ATTR_FAN_STATE
-from homeassistant.components.zwave_js.const import DOMAIN, SERVICE_REFRESH_VALUE
+from homeassistant.components.zwave_js.const import (
+    DOMAIN,
+    SERVICE_REFRESH_VALUE,
+    ZWAVE_DEFAULT_MIN_TEMP,
+)
 from homeassistant.components.zwave_js.helpers import ZwaveValueMatcher
 from homeassistant.const import (
     ATTR_ENTITY_ID,
@@ -812,7 +816,7 @@ async def test_thermostat_heatit_z_trm2fx(
         | ClimateEntityFeature.TURN_OFF
         | ClimateEntityFeature.TURN_ON
     )
-    assert state.attributes[ATTR_MIN_TEMP] == 7
+    assert state.attributes[ATTR_MIN_TEMP] == ZWAVE_DEFAULT_MIN_TEMP
     assert state.attributes[ATTR_MAX_TEMP] == 35
 
     # Try switching to external sensor

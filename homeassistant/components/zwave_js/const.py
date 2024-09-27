@@ -137,6 +137,9 @@ ATTR_TWIST_ASSIST = "twist_assist"
 
 ADDON_SLUG = "core_zwave_js"
 
+# default climate min temperature in C
+ZWAVE_DEFAULT_MIN_TEMP = 0
+
 # Sensor entity description constants
 ENTITY_DESC_KEY_BATTERY = "battery"
 ENTITY_DESC_KEY_CURRENT = "current"
