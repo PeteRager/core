@@ -164,6 +164,12 @@ def climate_danfoss_lc_13_state_fixture() -> dict[str, Any]:
     return load_json_object_fixture("climate_danfoss_lc_13_state.json", DOMAIN)
 
 
+@pytest.fixture(name="climate_honeywell_t6_state", scope="package")
+def climate_honeywell_t6_state_fixture() -> dict[str, Any]:
+    """Load Danfoss (LC-13) electronic radiator thermostat node state fixture data."""
+    return load_json_object_fixture("climate_honeywell_t6_state.json", DOMAIN)
+
+
 @pytest.fixture(name="climate_eurotronic_spirit_z_state", scope="package")
 def climate_eurotronic_spirit_z_state_fixture() -> dict[str, Any]:
     """Load the climate Eurotronic Spirit Z thermostat node state fixture data."""
@@ -707,6 +713,14 @@ def climate_airzone_aidoo_control_hvac_unit_fixture(
 def climate_danfoss_lc_13_fixture(client, climate_danfoss_lc_13_state) -> Node:
     """Mock a climate radio danfoss LC-13 node."""
     node = Node(client, copy.deepcopy(climate_danfoss_lc_13_state))
+    client.driver.controller.nodes[node.node_id] = node
+    return node
+
+
+@pytest.fixture(name="climate_honeywell_t6")
+def climate_honeywell_t6_fixture(client, climate_honeywell_t6_state) -> Node:
+    """Mock a climate radio danfoss LC-13 node."""
+    node = Node(client, copy.deepcopy(climate_honeywell_t6_state))
     client.driver.controller.nodes[node.node_id] = node
     return node
 

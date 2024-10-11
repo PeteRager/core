@@ -998,3 +998,14 @@ async def test_thermostat_unknown_values(
     state = hass.states.get(CLIMATE_RADIO_THERMOSTAT_ENTITY)
 
     assert ATTR_HVAC_ACTION not in state.attributes
+
+
+async def test_metadata_min_max(
+    hass: HomeAssistant, client, climate_honeywell_t6, integration
+) -> None:
+    """Test a setpoint thermostat command class entity."""
+    state = hass.states.get("climate.living_connect_z_thermostat")
+
+    assert state
+    assert state.attributes[ATTR_MIN_TEMP] == 4.4
+    assert state.attributes[ATTR_MAX_TEMP] == 37.2

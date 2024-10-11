@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import astuple, dataclass
 import logging
+import os
 from typing import Any, cast
 
 import voluptuous as vol
@@ -33,6 +34,7 @@ from homeassistant.const import (
     ATTR_DEVICE_ID,
     ATTR_ENTITY_ID,
     CONF_TYPE,
+    UnitOfTemperature,
     __version__ as HA_VERSION,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -41,6 +43,8 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.group import expand_entity_ids
 from homeassistant.helpers.typing import ConfigType, VolSchemaType
+from homeassistant.util import json as json_util
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     ATTR_COMMAND_CLASS,
@@ -529,3 +533,66 @@ def get_network_identifier_for_notification(
             return f"`{config_entry.title}`, with the home ID `{home_id}`,"
         return f"with the home ID `{home_id}`"
     return ""
+
+
+class DeviceData:
+    data: dict[str, Any] = None
+
+    @property
+    def loaded(self) -> bool:
+        return self.data is not None
+
+    def load_data(self):
+        device_file = os.path.dirname(__file__) + "/metadata/devices.json"
+        self.data = json_util.load_json(device_file)
+
+
+device_metadata = DeviceData()
+
+
+def get_device_metadata(device: str) -> dict[str, Any]:
+    if not device_metadata.loaded:
+        device_metadata.load_data()
+    return device_metadata.data.get(device)
+
+
+def get_device_climate_min(device: str, preffered_units: str):
+    if not (metadata := get_device_metadata(device)):
+        return None
+    if preffered_units == UnitOfTemperature.FAHRENHEIT:
+        if result := metadata.get("min_f"):
+            return result
+        if result := metadata.get("min_c"):
+            return TemperatureConverter.convert(
+                result, UnitOfTemperature.CELSIUS, preffered_units
+            )
+        return None
+    if preffered_units == UnitOfTemperature.CELSIUS:
+        if result := metadata.get("min_c"):
+            return result
+        if result := metadata.get("min_f"):
+            return TemperatureConverter.convert(
+                result, UnitOfTemperature.FAHRENHEIT, preffered_units
+            )
+        return None
+
+
+def get_device_climate_max(device: str, preffered_units: str):
+    if not (metadata := get_device_metadata(device)):
+        return None
+    if preffered_units == UnitOfTemperature.FAHRENHEIT:
+        if result := metadata.get("max_f"):
+            return result
+        if result := metadata.get("max_c"):
+            return TemperatureConverter.convert(
+                result, UnitOfTemperature.CELSIUS, preffered_units
+            )
+        return None
+    if preffered_units == UnitOfTemperature.CELSIUS:
+        if result := metadata.get("max_c"):
+            return result
+        if result := metadata.get("max_f"):
+            return TemperatureConverter.convert(
+                result, UnitOfTemperature.FAHRENHEIT, preffered_units
+            )
+        return None
