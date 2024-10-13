@@ -916,12 +916,12 @@ class ClimateEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
         return self._attr_max_temp
 
     @cached_property
-    def min_humidity(self) -> float | None:
+    def min_humidity(self) -> float:
         """Return the minimum humidity."""
         return self._attr_min_humidity
 
     @cached_property
-    def max_humidity(self) -> float | None:
+    def max_humidity(self) -> float:
         """Return the maximum humidity."""
         return self._attr_max_humidity
 
