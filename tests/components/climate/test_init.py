@@ -12,6 +12,8 @@ import voluptuous as vol
 
 from homeassistant.components import climate
 from homeassistant.components.climate import (
+    DEFAULT_MAX_TEMP,
+    DEFAULT_MIN_TEMP,
     DOMAIN,
     SET_TEMPERATURE_SCHEMA,
     ClimateEntity,
@@ -1140,6 +1142,8 @@ async def test_temperature_validation(
         _attr_target_temperature_high = 18
         _attr_target_temperature_low = 10
         _attr_target_temperature_step = PRECISION_WHOLE
+        _attr_min_temp = DEFAULT_MIN_TEMP
+        _attr_max_temp = DEFAULT_MAX_TEMP
 
         def set_temperature(self, **kwargs: Any) -> None:
             """Set new target temperature."""
@@ -1162,8 +1166,8 @@ async def test_temperature_validation(
 
     state = hass.states.get("climate.test")
     assert state.attributes.get(ATTR_CURRENT_TEMPERATURE) is None
-    assert state.attributes.get(ATTR_MIN_TEMP) == 7
-    assert state.attributes.get(ATTR_MAX_TEMP) == 35
+    assert state.attributes.get(ATTR_MIN_TEMP) == DEFAULT_MIN_TEMP
+    assert state.attributes.get(ATTR_MAX_TEMP) == DEFAULT_MAX_TEMP
 
     with pytest.raises(
         ServiceValidationError,
@@ -1220,6 +1224,79 @@ async def test_temperature_validation(
     assert state.attributes.get(ATTR_TARGET_TEMP_HIGH) == 25
 
 
+async def test_temperature_validation_no_limits(
+    hass: HomeAssistant, register_test_integration: MockConfigEntry
+) -> None:
+    """Test validation does not occur when there are no min or max limits.."""
+
+    class MockClimateEntityTemp(MockClimateEntity):
+        """Mock climate class with mocked aux heater."""
+
+        _attr_supported_features = (
+            ClimateEntityFeature.FAN_MODE
+            | ClimateEntityFeature.PRESET_MODE
+            | ClimateEntityFeature.SWING_MODE
+            | ClimateEntityFeature.TARGET_TEMPERATURE
+            | ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+        )
+        _attr_target_temperature = 15
+        _attr_target_temperature_high = 18
+        _attr_target_temperature_low = 10
+        _attr_target_temperature_step = PRECISION_WHOLE
+
+        def set_temperature(self, **kwargs: Any) -> None:
+            """Set new target temperature."""
+            if ATTR_TEMPERATURE in kwargs:
+                self._attr_target_temperature = kwargs[ATTR_TEMPERATURE]
+            if ATTR_TARGET_TEMP_HIGH in kwargs:
+                self._attr_target_temperature_high = kwargs[ATTR_TARGET_TEMP_HIGH]
+                self._attr_target_temperature_low = kwargs[ATTR_TARGET_TEMP_LOW]
+
+    test_climate = MockClimateEntityTemp(
+        name="Test",
+        unique_id="unique_climate_test",
+    )
+
+    setup_test_component_platform(
+        hass, DOMAIN, entities=[test_climate], from_config_entry=True
+    )
+    await hass.config_entries.async_setup(register_test_integration.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("climate.test")
+    assert state.attributes.get(ATTR_CURRENT_TEMPERATURE) is None
+    assert state.attributes.get(ATTR_MIN_TEMP) == DEFAULT_MIN_TEMP
+    assert state.attributes.get(ATTR_MAX_TEMP) == DEFAULT_MAX_TEMP
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_TEMPERATURE,
+        {
+            "entity_id": "climate.test",
+            ATTR_TEMPERATURE: "40",
+        },
+        blocking=True,
+    )
+
+    state = hass.states.get("climate.test")
+    assert state.attributes.get(ATTR_TEMPERATURE) == 40
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_TEMPERATURE,
+        {
+            "entity_id": "climate.test",
+            ATTR_TARGET_TEMP_HIGH: "25",
+            ATTR_TARGET_TEMP_LOW: "0",
+        },
+        blocking=True,
+    )
+
+    state = hass.states.get("climate.test")
+    assert state.attributes.get(ATTR_TARGET_TEMP_LOW) == 0
+    assert state.attributes.get(ATTR_TARGET_TEMP_HIGH) == 25
+
+
 async def test_target_temp_high_higher_than_low(
     hass: HomeAssistant, register_test_integration: MockConfigEntry
 ) -> None:
@@ -1237,6 +1314,8 @@ async def test_target_temp_high_higher_than_low(
         _attr_target_temperature_high = 18
         _attr_target_temperature_low = 10
         _attr_target_temperature_step = PRECISION_WHOLE
+        _attr_max_temp = DEFAULT_MAX_TEMP
+        _attr_min_temp = DEFAULT_MIN_TEMP
 
         def set_temperature(self, **kwargs: Any) -> None:
             """Set new target temperature."""

@@ -290,10 +290,10 @@ class ClimateEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
     _attr_hvac_mode: HVACMode | None
     _attr_hvac_modes: list[HVACMode]
     _attr_is_aux_heat: bool | None
-    _attr_max_humidity: float = DEFAULT_MAX_HUMIDITY
-    _attr_max_temp: float
-    _attr_min_humidity: float = DEFAULT_MIN_HUMIDITY
-    _attr_min_temp: float
+    _attr_max_humidity: float
+    _attr_max_temp: float | None
+    _attr_min_humidity: float
+    _attr_min_temp: float | None
     _attr_precision: float
     _attr_preset_mode: str | None
     _attr_preset_modes: list[str] | None
@@ -571,6 +571,16 @@ class ClimateEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
                 and "custom_components" in type(self).__module__
             ):
                 self._report_legacy_aux()
+
+        if self.max_temp is None:
+            data[ATTR_MAX_TEMP] = TemperatureConverter.convert(
+                DEFAULT_MAX_TEMP, UnitOfTemperature.CELSIUS, self.temperature_unit
+            )
+
+        if self.min_temp is None:
+            data[ATTR_MIN_TEMP] = TemperatureConverter.convert(
+                DEFAULT_MIN_TEMP, UnitOfTemperature.CELSIUS, self.temperature_unit
+            )
 
         return data
 
@@ -892,30 +902,26 @@ class ClimateEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
         return self._attr_supported_features
 
     @cached_property
-    def min_temp(self) -> float:
+    def min_temp(self) -> float | None:
         """Return the minimum temperature."""
         if not hasattr(self, "_attr_min_temp"):
-            return TemperatureConverter.convert(
-                DEFAULT_MIN_TEMP, UnitOfTemperature.CELSIUS, self.temperature_unit
-            )
+            return None
         return self._attr_min_temp
 
     @cached_property
-    def max_temp(self) -> float:
+    def max_temp(self) -> float | None:
         """Return the maximum temperature."""
         if not hasattr(self, "_attr_max_temp"):
-            return TemperatureConverter.convert(
-                DEFAULT_MAX_TEMP, UnitOfTemperature.CELSIUS, self.temperature_unit
-            )
+            return None
         return self._attr_max_temp
 
     @cached_property
-    def min_humidity(self) -> float:
+    def min_humidity(self) -> float | None:
         """Return the minimum humidity."""
         return self._attr_min_humidity
 
     @cached_property
-    def max_humidity(self) -> float:
+    def max_humidity(self) -> float | None:
         """Return the maximum humidity."""
         return self._attr_max_humidity
 
@@ -938,7 +944,7 @@ async def async_service_humidity_set(
     min_humidity = entity.min_humidity
     max_humidity = entity.max_humidity
     _LOGGER.debug(
-        "Check valid humidity %d in range %d - %d",
+        "Check valid humidity %d in range %s - %s",
         humidity,
         min_humidity,
         max_humidity,
@@ -1013,7 +1019,9 @@ async def async_service_temperature_set(
                 max_temp,
                 temp_unit,
             )
-            if check_temp < min_temp or check_temp > max_temp:
+            if (min_temp and check_temp < min_temp) or (
+                max_temp and check_temp > max_temp
+            ):
                 raise ServiceValidationError(
                     translation_domain=DOMAIN,
                     translation_key="temp_out_of_range",
