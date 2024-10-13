@@ -944,7 +944,7 @@ async def async_service_humidity_set(
     min_humidity = entity.min_humidity
     max_humidity = entity.max_humidity
     _LOGGER.debug(
-        "Check valid humidity %d in range %s - %s",
+        "Check valid humidity %d in range %d - %d",
         humidity,
         min_humidity,
         max_humidity,
