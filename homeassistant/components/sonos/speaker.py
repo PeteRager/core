@@ -436,10 +436,10 @@ class SonosSpeaker:
         self.event_stats.receive(event)
 
         # Skip if this update is an unchanged subset of the previous event
-        if last_event := self._last_event_cache.get(event.service.service_type):
-            if event.variables.items() <= last_event.items():
-                self.event_stats.duplicate(event)
-                return
+        # if last_event := self._last_event_cache.get(event.service.service_type):
+        #     if event.variables.items() <= last_event.items():
+        #         self.event_stats.duplicate(event)
+        #         return
 
         # Save most recently processed event variables for cache and diagnostics
         self._last_event_cache[event.service.service_type] = event.variables

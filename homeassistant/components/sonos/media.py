@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 from typing import Any
 
 from soco.core import (
@@ -42,6 +43,8 @@ SOURCE_MAPPING = {
 UNAVAILABLE_VALUES = {"", "NOT_IMPLEMENTED", None}
 DURATION_SECONDS = "duration_in_s"
 POSITION_SECONDS = "position_in_s"
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _timespan_secs(timespan: str | None) -> int | None:
@@ -205,6 +208,8 @@ class SonosMedia:
         """Update state when playing music tracks."""
         duration = position_info.get(DURATION_SECONDS)
         current_position = position_info.get(POSITION_SECONDS)
+        
+        _LOGGER.error("Position %s %s %s", position_info['title'], duration, current_position)
 
         if not (duration or current_position):
             self.clear_position()
@@ -216,7 +221,9 @@ class SonosMedia:
         # player started reporting position?
         if current_position is not None and self.position is None:
             should_update = True
-
+        else:
+            should_update = False
+            
         # position jumped?
         if current_position is not None and self.position is not None:
             if self.playback_status == SONOS_STATE_PLAYING:
@@ -230,9 +237,13 @@ class SonosMedia:
 
             if abs(calculated_position - current_position) > 1.5:
                 should_update = True
+            else:
+                should_update = False
 
         if current_position is None:
             self.clear_position()
         elif should_update:
             self.position = current_position
             self.position_updated_at = dt_util.utcnow()
+        else:
+            _LOGGER.error("skipped update")
