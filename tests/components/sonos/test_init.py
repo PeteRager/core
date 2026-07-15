@@ -14,6 +14,7 @@ from requests.exceptions import HTTPError
 from homeassistant import config_entries
 from homeassistant.components import sonos
 from homeassistant.components.sonos.const import (
+    DATA_SONOS_DISCOVERY_MANAGER,
     DISCOVERY_INTERVAL,
     SONOS_SPEAKER_ACTIVITY,
     UPNP_ISSUE_ID,
@@ -149,6 +150,39 @@ async def test_disable_device_unsubscribes_speaker(
         await hass.async_block_till_done(wait_background_tasks=True)
 
     assert mock_async_unsubscribe.await_count == 1
+    assert not speaker._subscriptions
+
+
+async def test_discovery_ignored_for_disabled_device(
+    hass: HomeAssistant,
+    async_setup_sonos,
+    config_entry: MockConfigEntry,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Test disabled Sonos devices are ignored by discovery activity handling."""
+    await async_setup_sonos()
+
+    speaker = list(config_entry.runtime_data.discovered.values())[0]
+    assert speaker._subscriptions
+
+    device = device_registry.async_get_device(identifiers={(sonos.DOMAIN, speaker.uid)})
+    assert device is not None
+    device_registry.async_update_device(
+        device.id,
+        disabled_by=dr.DeviceEntryDisabler.USER,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert not speaker._subscriptions
+
+    manager = hass.data[DATA_SONOS_DISCOVERY_MANAGER]
+    await manager._async_handle_discovery_message(
+        speaker.uid,
+        speaker.soco.ip_address,
+        "discovery",
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert not speaker.available
     assert not speaker._subscriptions
 
 

@@ -228,6 +228,16 @@ class SonosDiscoveryManager:
         """Check if device at provided IP is known to be invisible."""
         return any(x for x in self._known_invisible if x.ip_address == ip_address)
 
+    def is_device_disabled(self, uid: str) -> bool:
+        """Check if the Sonos device is disabled in the device registry."""
+        if not (
+            device := dr.async_get(self.hass).async_get_device(
+                identifiers={(DOMAIN, uid)}
+            )
+        ):
+            return False
+        return device.disabled_by is not None
+
     async def _process_http_connection_error(
         self, err: HTTPError, ip_address: str
     ) -> None:
@@ -586,6 +596,10 @@ class SonosDiscoveryManager:
         boot_seqnum: int | None = None,
     ) -> None:
         """Handle discovered player creation and activity."""
+        if self.is_device_disabled(uid):
+            _LOGGER.debug("Skipping discovery for disabled Sonos device: %s", uid)
+            return
+
         async with self.discovery_lock:
             if not self.data.discovered:
                 # Initial discovery, attempt to add all visible zones
