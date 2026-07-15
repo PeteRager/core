@@ -21,7 +21,11 @@ from homeassistant.components.sonos.const import (
 from homeassistant.components.sonos.exception import SonosUpdateError
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.setup import async_setup_component
@@ -116,6 +120,36 @@ async def test_upnp_disabled_discovery(
         )
         is not None
     )
+
+
+async def test_disable_device_unsubscribes_speaker(
+    hass: HomeAssistant,
+    async_setup_sonos,
+    config_entry: MockConfigEntry,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Test that disabling one Sonos device unsubscribes only that speaker."""
+    await async_setup_sonos()
+
+    speaker = list(config_entry.runtime_data.discovered.values())[0]
+    assert speaker._subscriptions
+
+    with patch.object(
+        speaker, "async_unsubscribe", wraps=speaker.async_unsubscribe
+    ) as mock_async_unsubscribe:
+        device = device_registry.async_get_device(
+            identifiers={(sonos.DOMAIN, speaker.uid)}
+        )
+        assert device is not None
+
+        device_registry.async_update_device(
+            device.id,
+            disabled_by=dr.DeviceEntryDisabler.USER,
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert mock_async_unsubscribe.await_count == 1
+    assert not speaker._subscriptions
 
 
 async def test_upnp_disabled_manual_hosts(
