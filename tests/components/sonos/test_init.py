@@ -186,6 +186,61 @@ async def test_discovery_ignored_for_disabled_device(
     assert not speaker._subscriptions
 
 
+async def test_reenable_device_allows_discovery_activity(
+    hass: HomeAssistant,
+    async_setup_sonos,
+    config_entry: MockConfigEntry,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Test re-enabled Sonos devices reactivate after cooldown activity."""
+    await async_setup_sonos()
+
+    speaker = list(config_entry.runtime_data.discovered.values())[0]
+    assert speaker._subscriptions
+
+    device = device_registry.async_get_device(identifiers={(sonos.DOMAIN, speaker.uid)})
+    assert device is not None
+
+    device_registry.async_update_device(
+        device.id,
+        disabled_by=dr.DeviceEntryDisabler.USER,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert not speaker.available
+    assert not speaker._subscriptions
+
+    device_registry.async_update_device(
+        device.id,
+        disabled_by=None,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    manager = hass.data[DATA_SONOS_DISCOVERY_MANAGER]
+    await manager._async_handle_discovery_message(
+        speaker.uid,
+        speaker.soco.ip_address,
+        "discovery",
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    # Speaker activity is ignored while in the resubscription cooldown window.
+    assert not speaker.available
+    assert not speaker._subscriptions
+
+    # Simulate cooldown expiration and verify discovery activity can reactivate.
+    speaker._resub_cooldown_expires_at = None
+    await manager._async_handle_discovery_message(
+        speaker.uid,
+        speaker.soco.ip_address,
+        "discovery",
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert speaker.available
+    assert speaker._subscriptions
+
+
 async def test_upnp_disabled_manual_hosts(
     hass: HomeAssistant,
     soco_factory: SoCoMockFactory,
