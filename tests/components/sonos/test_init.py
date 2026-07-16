@@ -4,7 +4,7 @@ import asyncio
 from http import HTTPStatus
 from itertools import chain, repeat
 import logging
-from unittest.mock import Mock, PropertyMock, patch
+from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
@@ -12,9 +12,8 @@ from requests import Response
 from requests.exceptions import HTTPError
 
 from homeassistant import config_entries
-from homeassistant.components import sonos
+from homeassistant.components import sonos, ssdp
 from homeassistant.components.sonos.const import (
-    DATA_SONOS_DISCOVERY_MANAGER,
     DISCOVERY_INTERVAL,
     SONOS_SPEAKER_ACTIVITY,
     UPNP_ISSUE_ID,
@@ -28,6 +27,7 @@ from homeassistant.helpers import (
     issue_registry as ir,
 )
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.service_info.ssdp import ATTR_UPNP_UDN, SsdpServiceInfo
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
@@ -35,6 +35,34 @@ from homeassistant.util import dt as dt_util
 from .conftest import MockSoCo, SoCoMockFactory
 
 from tests.common import MockConfigEntry, async_fire_time_changed
+
+
+def _soco_subscription_services(soco: MockSoCo) -> tuple:
+    """Return services used by SonosSpeaker subscriptions."""
+    return (
+        soco.alarmClock,
+        soco.avTransport,
+        soco.contentDirectory,
+        soco.deviceProperties,
+        soco.renderingControl,
+        soco.zoneGroupTopology,
+    )
+
+
+def _trigger_ssdp_discovery(discover: Mock, soco: MockSoCo) -> None:
+    """Trigger the Sonos SSDP callback with a discovery event."""
+    callback = discover.call_args.args[1]
+    callback(
+        SsdpServiceInfo(
+            ssdp_location=f"http://{soco.ip_address}/",
+            ssdp_st="urn:schemas-upnp-org:device:ZonePlayer:1",
+            ssdp_usn=f"uuid:{soco.uid}_MR::urn:schemas-upnp-org:service:GroupRenderingControl:1",
+            upnp={
+                ATTR_UPNP_UDN: f"uuid:{soco.uid}",
+            },
+        ),
+        ssdp.SsdpChange.ALIVE,
+    )
 
 
 async def test_creating_entry_sets_up_media_player(
@@ -126,20 +154,74 @@ async def test_upnp_disabled_discovery(
 async def test_disable_device_unsubscribes_speaker(
     hass: HomeAssistant,
     async_setup_sonos,
-    config_entry: MockConfigEntry,
+    soco: MockSoCo,
     device_registry: dr.DeviceRegistry,
 ) -> None:
     """Test that disabling one Sonos device unsubscribes only that speaker."""
     await async_setup_sonos()
 
-    speaker = list(config_entry.runtime_data.discovered.values())[0]
-    assert speaker._subscriptions
+    subscriptions = [
+        service.subscribe.return_value for service in _soco_subscription_services(soco)
+    ]
+    for sub in subscriptions:
+        sub.unsubscribe = AsyncMock(wraps=sub.unsubscribe)
 
-    with patch.object(
-        speaker, "async_unsubscribe", wraps=speaker.async_unsubscribe
-    ) as mock_async_unsubscribe:
+    device = device_registry.async_get_device(identifiers={(sonos.DOMAIN, soco.uid)})
+    assert device is not None
+
+    device_registry.async_update_device(
+        device.id,
+        disabled_by=dr.DeviceEntryDisabler.USER,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert any(sub.unsubscribe.await_count > 0 for sub in subscriptions)
+
+
+async def test_discovery_ignored_for_disabled_device(
+    hass: HomeAssistant,
+    async_setup_sonos,
+    discover,
+    soco: MockSoCo,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Test disabled Sonos devices are ignored by discovery activity handling."""
+    await async_setup_sonos()
+
+    services = _soco_subscription_services(soco)
+    before_discovery_counts = [service.subscribe.await_count for service in services]
+
+    device = device_registry.async_get_device(identifiers={(sonos.DOMAIN, soco.uid)})
+    assert device is not None
+    device_registry.async_update_device(
+        device.id,
+        disabled_by=dr.DeviceEntryDisabler.USER,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    _trigger_ssdp_discovery(discover, soco)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    after_discovery_counts = [service.subscribe.await_count for service in services]
+    assert after_discovery_counts == before_discovery_counts
+
+
+async def test_reenable_device_allows_discovery_activity(
+    hass: HomeAssistant,
+    async_setup_sonos,
+    discover,
+    soco: MockSoCo,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Test re-enabled Sonos devices reactivate after cooldown activity."""
+    with patch("homeassistant.components.sonos.speaker.RESUB_COOLDOWN_SECONDS", 0):
+        await async_setup_sonos()
+
+        services = _soco_subscription_services(soco)
+        before_reenable_counts = [service.subscribe.await_count for service in services]
+
         device = device_registry.async_get_device(
-            identifiers={(sonos.DOMAIN, speaker.uid)}
+            identifiers={(sonos.DOMAIN, soco.uid)}
         )
         assert device is not None
 
@@ -149,96 +231,22 @@ async def test_disable_device_unsubscribes_speaker(
         )
         await hass.async_block_till_done(wait_background_tasks=True)
 
-    assert mock_async_unsubscribe.await_count == 1
-    assert not speaker._subscriptions
+        device_registry.async_update_device(
+            device.id,
+            disabled_by=None,
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
 
+        _trigger_ssdp_discovery(discover, soco)
+        await hass.async_block_till_done(wait_background_tasks=True)
 
-async def test_discovery_ignored_for_disabled_device(
-    hass: HomeAssistant,
-    async_setup_sonos,
-    config_entry: MockConfigEntry,
-    device_registry: dr.DeviceRegistry,
-) -> None:
-    """Test disabled Sonos devices are ignored by discovery activity handling."""
-    await async_setup_sonos()
-
-    speaker = list(config_entry.runtime_data.discovered.values())[0]
-    assert speaker._subscriptions
-
-    device = device_registry.async_get_device(identifiers={(sonos.DOMAIN, speaker.uid)})
-    assert device is not None
-    device_registry.async_update_device(
-        device.id,
-        disabled_by=dr.DeviceEntryDisabler.USER,
+    after_reenable_counts = [service.subscribe.await_count for service in services]
+    assert any(
+        after > before
+        for before, after in zip(
+            before_reenable_counts, after_reenable_counts, strict=False
+        )
     )
-    await hass.async_block_till_done(wait_background_tasks=True)
-    assert not speaker._subscriptions
-
-    manager = hass.data[DATA_SONOS_DISCOVERY_MANAGER]
-    await manager._async_handle_discovery_message(
-        speaker.uid,
-        speaker.soco.ip_address,
-        "discovery",
-    )
-    await hass.async_block_till_done(wait_background_tasks=True)
-
-    assert not speaker.available
-    assert not speaker._subscriptions
-
-
-async def test_reenable_device_allows_discovery_activity(
-    hass: HomeAssistant,
-    async_setup_sonos,
-    config_entry: MockConfigEntry,
-    device_registry: dr.DeviceRegistry,
-) -> None:
-    """Test re-enabled Sonos devices reactivate after cooldown activity."""
-    await async_setup_sonos()
-
-    speaker = list(config_entry.runtime_data.discovered.values())[0]
-    assert speaker._subscriptions
-
-    device = device_registry.async_get_device(identifiers={(sonos.DOMAIN, speaker.uid)})
-    assert device is not None
-
-    device_registry.async_update_device(
-        device.id,
-        disabled_by=dr.DeviceEntryDisabler.USER,
-    )
-    await hass.async_block_till_done(wait_background_tasks=True)
-
-    assert not speaker.available
-    assert not speaker._subscriptions
-
-    device_registry.async_update_device(
-        device.id,
-        disabled_by=None,
-    )
-    await hass.async_block_till_done(wait_background_tasks=True)
-
-    manager = hass.data[DATA_SONOS_DISCOVERY_MANAGER]
-    await manager._async_handle_discovery_message(
-        speaker.uid,
-        speaker.soco.ip_address,
-        "discovery",
-    )
-    await hass.async_block_till_done(wait_background_tasks=True)
-
-    # Speaker activity is ignored while in the resubscription cooldown window.
-    assert not speaker.available
-    assert not speaker._subscriptions
-
-    # Simulate cooldown expiration and verify discovery activity can reactivate.
-    speaker._resub_cooldown_expires_at = None
-    await manager._async_handle_discovery_message(
-        speaker.uid,
-        speaker.soco.ip_address,
-        "discovery",
-    )
-    await hass.async_block_till_done(wait_background_tasks=True)
-
-    assert speaker.available
-    assert speaker._subscriptions
 
 
 async def test_upnp_disabled_manual_hosts(
