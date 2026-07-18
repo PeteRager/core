@@ -181,6 +181,41 @@ class SonosDiscoveryManager:
         self._known_invisible: set[SoCo] = set()
         self._manual_config_required = bool(hosts)
 
+    @callback
+    def _async_device_registry_updated(
+        self, event: Event[dr.EventDeviceRegistryUpdatedData]
+    ) -> None:
+        """Handle device disable updates for Sonos devices."""
+        if (
+            event.data["action"] != "update"
+            or "disabled_by" not in event.data["changes"]
+        ):
+            return
+
+        if not (device := dr.async_get(self.hass).async_get(event.data["device_id"])):
+            return
+
+        if self.entry.entry_id not in device.config_entries or not device.disabled:
+            return
+
+        uid = next(
+            (
+                identifier
+                for domain, identifier in device.identifiers
+                if domain == DOMAIN
+            ),
+            None,
+        )
+        if uid is None:
+            return
+
+        if speaker := self.data.discovered.get(uid):
+            self.entry.async_create_background_task(
+                self.hass,
+                speaker.async_offline(),
+                f"sonos-device-disabled-{uid}",
+            )
+
     async def async_shutdown(self) -> None:
         """Stop all running tasks."""
         await self._async_stop_event_listener()
@@ -655,6 +690,12 @@ class SonosDiscoveryManager:
     async def setup_platforms_and_discovery(self) -> None:
         """Set up platforms and discovery."""
         await self.hass.config_entries.async_forward_entry_setups(self.entry, PLATFORMS)
+        self.entry.async_on_unload(
+            self.hass.bus.async_listen(
+                dr.EVENT_DEVICE_REGISTRY_UPDATED,
+                self._async_device_registry_updated,
+            )
+        )
         self.entry.async_on_unload(
             self.hass.bus.async_listen_once(
                 EVENT_HOMEASSISTANT_STOP,

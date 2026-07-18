@@ -6,7 +6,7 @@ from http import HTTPStatus
 from itertools import chain, repeat
 import logging
 from typing import Any
-from unittest.mock import MagicMock, Mock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
@@ -121,6 +121,43 @@ async def test_upnp_disabled_discovery(
             sonos.DOMAIN, f"{UPNP_ISSUE_ID}_{soco.ip_address}"
         )
         is not None
+    )
+
+
+async def test_disable_device_unsubscribes_speaker(
+    hass: HomeAssistant,
+    async_setup_sonos,
+    soco: MockSoCo,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Test that disabling a Sonos device unsubscribes speaker subscriptions."""
+    await async_setup_sonos()
+
+    subscriptions = [
+        service.subscribe.return_value
+        for service in (
+            soco.alarmClock,
+            soco.avTransport,
+            soco.contentDirectory,
+            soco.deviceProperties,
+            soco.renderingControl,
+            soco.zoneGroupTopology,
+        )
+    ]
+    for subscription in subscriptions:
+        subscription.unsubscribe = AsyncMock(wraps=subscription.unsubscribe)
+
+    device = device_registry.async_get_device(identifiers={(sonos.DOMAIN, soco.uid)})
+    assert device is not None
+
+    device_registry.async_update_device(
+        device.id,
+        disabled_by=dr.DeviceEntryDisabler.USER,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert any(
+        subscription.unsubscribe.await_count > 0 for subscription in subscriptions
     )
 
 
