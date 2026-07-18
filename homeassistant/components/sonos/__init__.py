@@ -186,10 +186,10 @@ class SonosDiscoveryManager:
         self, event: Event[dr.EventDeviceRegistryUpdatedData]
     ) -> None:
         """Handle device disable updates for Sonos devices."""
-        if (
-            event.data["action"] != "update"
-            or "disabled_by" not in event.data["changes"]
-        ):
+        if event.data["action"] != "update":
+            return
+
+        if "disabled_by" not in event.data["changes"]:
             return
 
         if not (device := dr.async_get(self.hass).async_get(event.data["device_id"])):
@@ -198,23 +198,26 @@ class SonosDiscoveryManager:
         if self.entry.entry_id not in device.config_entries or not device.disabled:
             return
 
-        uid = next(
-            (
-                identifier
-                for domain, identifier in device.identifiers
-                if domain == DOMAIN
-            ),
-            None,
-        )
-        if uid is None:
+        if not (
+            uid := next(
+                (
+                    identifier
+                    for domain, identifier in device.identifiers
+                    if domain == DOMAIN
+                ),
+                None,
+            )
+        ):
             return
 
-        if speaker := self.data.discovered.get(uid):
-            self.entry.async_create_background_task(
-                self.hass,
-                speaker.async_offline(start_resub_cooldown=False),
-                f"sonos-device-disabled-{uid}",
-            )
+        if not (speaker := self.data.discovered.get(uid)):
+            return
+
+        self.entry.async_create_background_task(
+            self.hass,
+            speaker.async_offline(start_resub_cooldown=False),
+            f"sonos-device-disabled-{uid}",
+        )
 
     async def async_shutdown(self) -> None:
         """Stop all running tasks."""

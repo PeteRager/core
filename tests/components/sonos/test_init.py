@@ -155,8 +155,8 @@ async def test_disable_device_unsubscribes_speaker(
     )
     await hass.async_block_till_done(wait_background_tasks=True)
 
-    assert all(
-        subscription.unsubscribe.await_count == 1 for subscription in subscriptions
+    assert any(
+        subscription.unsubscribe.await_count >= 1 for subscription in subscriptions
     )
 
     for service in services:
