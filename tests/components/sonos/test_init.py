@@ -143,9 +143,6 @@ async def test_disable_device_unsubscribes_speaker(
         soco.zoneGroupTopology,
     )
     subscriptions = [service.subscribe.return_value for service in services]
-    subscribe_counts_before_disable = [
-        service.subscribe.await_count for service in services
-    ]
     for subscription in subscriptions:
         subscription.unsubscribe = AsyncMock(wraps=subscription.unsubscribe)
 
@@ -158,9 +155,12 @@ async def test_disable_device_unsubscribes_speaker(
     )
     await hass.async_block_till_done(wait_background_tasks=True)
 
-    assert any(
-        subscription.unsubscribe.await_count > 0 for subscription in subscriptions
+    assert all(
+        subscription.unsubscribe.await_count == 1 for subscription in subscriptions
     )
+
+    for service in services:
+        service.subscribe.reset_mock()
 
     device_registry.async_update_device(device.id, disabled_by=None)
 
@@ -168,17 +168,8 @@ async def test_disable_device_unsubscribes_speaker(
     discover.side_effect(*discover.call_args.args, **discover.call_args.kwargs)
     await hass.async_block_till_done(wait_background_tasks=True)
 
-    subscribe_counts_after_reenable = [
-        service.subscribe.await_count for service in services
-    ]
-    assert any(
-        after > before
-        for before, after in zip(
-            subscribe_counts_before_disable,
-            subscribe_counts_after_reenable,
-            strict=False,
-        )
-    )
+    for service in services:
+        service.subscribe.assert_awaited_once()
 
 
 async def test_upnp_disabled_manual_hosts(
