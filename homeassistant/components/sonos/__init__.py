@@ -212,7 +212,7 @@ class SonosDiscoveryManager:
         if speaker := self.data.discovered.get(uid):
             self.entry.async_create_background_task(
                 self.hass,
-                speaker.async_offline(),
+                speaker.async_offline(start_resub_cooldown=False),
                 f"sonos-device-disabled-{uid}",
             )
 

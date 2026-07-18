@@ -708,19 +708,23 @@ class SonosSpeaker:
             )
             await self.async_offline()
 
-    async def async_offline(self) -> None:
+    async def async_offline(self, start_resub_cooldown: bool = True) -> None:
         """Handle removal of speaker when unavailable."""
         if not self._subscription_lock:
             self._subscription_lock = asyncio.Lock()
         async with self._subscription_lock:
-            await self._async_offline()
+            await self._async_offline(start_resub_cooldown)
 
-    async def _async_offline(self) -> None:
+    async def _async_offline(self, start_resub_cooldown: bool = True) -> None:
         """Handle removal of speaker when unavailable."""
         if not self.available:
             return
 
-        if self._resub_cooldown_expires_at is None and not self.hass.is_stopping:
+        if (
+            start_resub_cooldown
+            and self._resub_cooldown_expires_at is None
+            and not self.hass.is_stopping
+        ):
             self._resub_cooldown_expires_at = time.monotonic() + RESUB_COOLDOWN_SECONDS
             _LOGGER.debug("Starting resubscription cooldown for %s", self.zone_name)
 
