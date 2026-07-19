@@ -126,14 +126,12 @@ async def test_upnp_disabled_discovery(
 
 async def test_disable_device_unsubscribes_speaker(
     hass: HomeAssistant,
-    async_setup_sonos,
+    async_autosetup_sonos: None,
     soco: MockSoCo,
     device_registry: dr.DeviceRegistry,
     discover: MagicMock,
 ) -> None:
     """Test disable tears down subscriptions and re-enable restores them."""
-    await async_setup_sonos()
-
     services = (
         soco.alarmClock,
         soco.avTransport,
@@ -155,9 +153,8 @@ async def test_disable_device_unsubscribes_speaker(
     )
     await hass.async_block_till_done(wait_background_tasks=True)
 
-    assert any(
-        subscription.unsubscribe.await_count >= 1 for subscription in subscriptions
-    )
+    for subscription in subscriptions:
+        assert subscription.unsubscribe.await_count == 1
 
     for service in services:
         service.subscribe.reset_mock()
@@ -169,7 +166,7 @@ async def test_disable_device_unsubscribes_speaker(
     await hass.async_block_till_done(wait_background_tasks=True)
 
     for service in services:
-        service.subscribe.assert_awaited_once()
+        assert service.subscribe.await_count == 1
 
 
 async def test_upnp_disabled_manual_hosts(

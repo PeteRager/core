@@ -195,24 +195,45 @@ class SonosDiscoveryManager:
         if not (device := dr.async_get(self.hass).async_get(event.data["device_id"])):
             return
 
-        if self.entry.entry_id not in device.config_entries or not device.disabled:
+        if self.entry.entry_id not in device.config_entries:
             return
 
-        if not (
-            uid := next(
-                (
-                    identifier
-                    for domain, identifier in device.identifiers
-                    if domain == DOMAIN
-                ),
-                None,
-            )
-        ):
+        uid = next(
+            (
+                identifier
+                for domain, identifier in device.identifiers
+                if domain == DOMAIN
+            ),
+            None,
+        )
+        if uid is None:
             return
+
+        if not device.disabled:
+            _LOGGER.debug(
+                "Sonos device re-enabled in registry: uid=%s device_id=%s changes=%s",
+                uid,
+                device.id,
+                event.data["changes"],
+            )
+            return
+
+        _LOGGER.debug(
+            "Sonos device disabled in registry: uid=%s device_id=%s changes=%s",
+            uid,
+            device.id,
+            event.data["changes"],
+        )
 
         if not (speaker := self.data.discovered.get(uid)):
+            _LOGGER.debug(
+                "Disabled Sonos device not currently discovered: uid=%s device_id=%s",
+                uid,
+                device.id,
+            )
             return
 
+        _LOGGER.debug("Scheduling offline handling for disabled Sonos device: %s", uid)
         self.entry.async_create_background_task(
             self.hass,
             speaker.async_offline(start_resub_cooldown=False),
