@@ -10,7 +10,14 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfLength, UnitOfMass
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfEnergy,
+    UnitOfLength,
+    UnitOfMass,
+    UnitOfTime,
+    UnitOfVolume,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -23,6 +30,8 @@ from .coordinator import (
     GoogleHealthActivityCoordinator,
     GoogleHealthBodyCoordinator,
     GoogleHealthDataUpdateCoordinator,
+    GoogleHealthNutritionCoordinator,
+    GoogleHealthSleepCoordinator,
 )
 
 PARALLEL_UPDATES = 0
@@ -118,6 +127,100 @@ BODY_SENSORS: list[
     ),
 ]
 
+SLEEP_SENSORS: list[
+    GoogleHealthSensorEntityDescription[GoogleHealthSleepCoordinator, Any]
+] = [
+    GoogleHealthSensorEntityDescription[GoogleHealthSleepCoordinator, int | None](
+        key="sleep_asleep",
+        translation_key="sleep_asleep",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: (
+            data.sleep.summary.minutes_asleep
+            if data and data.sleep and data.sleep.summary
+            else None
+        ),
+    ),
+    GoogleHealthSensorEntityDescription[GoogleHealthSleepCoordinator, int | None](
+        key="sleep_awake",
+        translation_key="sleep_awake",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: (
+            data.sleep.summary.minutes_awake
+            if data and data.sleep and data.sleep.summary
+            else None
+        ),
+    ),
+    GoogleHealthSensorEntityDescription[GoogleHealthSleepCoordinator, int | None](
+        key="sleep_in_bed",
+        translation_key="sleep_in_bed",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: (
+            data.sleep.summary.minutes_in_sleep_period
+            if data and data.sleep and data.sleep.summary
+            else None
+        ),
+    ),
+    GoogleHealthSensorEntityDescription[GoogleHealthSleepCoordinator, int | None](
+        key="sleep_to_fall_asleep",
+        translation_key="sleep_to_fall_asleep",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: (
+            data.sleep.summary.minutes_to_fall_asleep
+            if data and data.sleep and data.sleep.summary
+            else None
+        ),
+    ),
+    GoogleHealthSensorEntityDescription[GoogleHealthSleepCoordinator, int | None](
+        key="sleep_after_wakeup",
+        translation_key="sleep_after_wakeup",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: (
+            data.sleep.summary.minutes_after_wake_up
+            if data and data.sleep and data.sleep.summary
+            else None
+        ),
+    ),
+]
+
+
+NUTRITION_SENSORS: list[
+    GoogleHealthSensorEntityDescription[GoogleHealthNutritionCoordinator, Any]
+] = [
+    GoogleHealthSensorEntityDescription[GoogleHealthNutritionCoordinator, float](
+        key="hydration",
+        translation_key="hydration",
+        native_unit_of_measurement=UnitOfVolume.LITERS,
+        device_class=SensorDeviceClass.VOLUME,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda data: (
+            data.hydration.amount_consumed.milliliters_sum / 1000.0
+            if data and data.hydration and data.hydration.amount_consumed
+            else 0.0
+        ),
+    ),
+    GoogleHealthSensorEntityDescription[GoogleHealthNutritionCoordinator, float](
+        key="calories_consumed",
+        translation_key="calories_consumed",
+        native_unit_of_measurement=UnitOfEnergy.KILO_CALORIE,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda data: (
+            data.nutrition.energy.kcal_sum
+            if data and data.nutrition and data.nutrition.energy
+            else 0.0
+        ),
+    ),
+]
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -137,6 +240,16 @@ async def async_setup_entry(
         entities.extend(
             GoogleHealthSensor(body_coordinator, entry.entry_id, description)
             for description in BODY_SENSORS
+        )
+    if (sleep_coordinator := data.sleep_coordinator) is not None:
+        entities.extend(
+            GoogleHealthSensor(sleep_coordinator, entry.entry_id, description)
+            for description in SLEEP_SENSORS
+        )
+    if (nutrition_coordinator := data.nutrition_coordinator) is not None:
+        entities.extend(
+            GoogleHealthSensor(nutrition_coordinator, entry.entry_id, description)
+            for description in NUTRITION_SENSORS
         )
 
     if entities:
