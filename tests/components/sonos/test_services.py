@@ -19,7 +19,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
-from .conftest import MockSoCo, create_zgs_sonos_event, group_speakers, ungroup_speakers
+from .conftest import (
+    MockSoCo,
+    create_zgs_sonos_event,
+    group_speakers,
+    set_soco_group,
+    ungroup_speakers,
+)
 
 
 async def test_media_player_join(
@@ -172,6 +178,7 @@ async def test_media_player_unjoin_timeout(
     expected = (
         "Timeout while waiting for Sonos player to unjoin the group Bedroom: Bedroom"
     )
+    set_soco_group(soco_living_room, soco_bedroom)
     with (
         patch(
             "homeassistant.components.sonos.speaker.asyncio.timeout", instant_timeout
@@ -185,6 +192,92 @@ async def test_media_player_unjoin_timeout(
             blocking=True,
         )
     assert soco_bedroom.unjoin.call_count == 1
+
+
+async def test_media_player_join_topology_refreshed_on_timeout(
+    hass: HomeAssistant,
+    sonos_setup_two_speakers: list[MockSoCo],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test a join whose topology event is lost succeeds when the speakers grouped."""
+    soco_living_room = sonos_setup_two_speakers[0]
+    soco_bedroom = sonos_setup_two_speakers[1]
+    set_soco_group(soco_living_room, soco_bedroom)
+
+    with patch(
+        "homeassistant.components.sonos.speaker.asyncio.timeout", instant_timeout
+    ):
+        await hass.services.async_call(
+            MP_DOMAIN,
+            SERVICE_JOIN,
+            {
+                "entity_id": "media_player.living_room",
+                "group_members": ["media_player.bedroom"],
+            },
+            blocking=True,
+        )
+
+    assert soco_living_room.zoneGroupTopology.GetZoneGroupState.call_count == 1
+    assert "topology update was not received" in caplog.text
+    for entity_id in ("media_player.living_room", "media_player.bedroom"):
+        state = hass.states.get(entity_id)
+        assert state.attributes["group_members"] == [
+            "media_player.living_room",
+            "media_player.bedroom",
+        ]
+
+
+async def test_media_player_unjoin_topology_refreshed_on_timeout(
+    hass: HomeAssistant,
+    sonos_setup_two_speakers: list[MockSoCo],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test an unjoin whose topology event is lost succeeds when speakers ungrouped."""
+    soco_living_room = sonos_setup_two_speakers[0]
+    soco_bedroom = sonos_setup_two_speakers[1]
+    group_speakers(soco_living_room, soco_bedroom)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    with patch(
+        "homeassistant.components.sonos.speaker.asyncio.timeout", instant_timeout
+    ):
+        await hass.services.async_call(
+            MP_DOMAIN,
+            SERVICE_UNJOIN,
+            {ATTR_ENTITY_ID: "media_player.bedroom"},
+            blocking=True,
+        )
+
+    assert soco_bedroom.unjoin.call_count == 1
+    assert "topology update was not received" in caplog.text
+    for entity_id in ("media_player.living_room", "media_player.bedroom"):
+        state = hass.states.get(entity_id)
+        assert state.attributes["group_members"] == [entity_id]
+
+
+async def test_media_player_join_timeout_topology_refresh_fails(
+    hass: HomeAssistant,
+    sonos_setup_two_speakers: list[MockSoCo],
+) -> None:
+    """Test the timeout is raised when no speaker can provide the topology."""
+    for soco in sonos_setup_two_speakers:
+        soco.zoneGroupTopology.GetZoneGroupState.side_effect = OSError
+
+    with (
+        patch(
+            "homeassistant.components.sonos.speaker.asyncio.timeout", instant_timeout
+        ),
+        pytest.raises(HomeAssistantError, match="Timeout while waiting"),
+    ):
+        await hass.services.async_call(
+            MP_DOMAIN,
+            SERVICE_JOIN,
+            {
+                "entity_id": "media_player.living_room",
+                "group_members": ["media_player.bedroom"],
+            },
+            blocking=True,
+        )
 
 
 async def test_media_player_unjoin(

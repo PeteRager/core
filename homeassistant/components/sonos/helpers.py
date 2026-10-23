@@ -163,6 +163,7 @@ class SonosData:
     favorites: dict[str, SonosFavorites] = field(default_factory=dict)
     alarms: dict[str, SonosAlarms] = field(default_factory=dict)
     topology_condition: asyncio.Condition = field(default_factory=asyncio.Condition)
+    topology_verify_cancel: CALLBACK_TYPE | None = None
     hosts_heartbeat: CALLBACK_TYPE | None = None
     discovery_known: set[str] = field(default_factory=set)
     boot_counts: dict[str, int] = field(default_factory=dict)

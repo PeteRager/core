@@ -104,6 +104,17 @@ class SonosMockAlarmClock(SonosMockService):
         self.UpdateAlarm = Mock()
 
 
+class SonosMockZoneGroupTopology(SonosMockService):
+    """Mock a Sonos ZoneGroupTopology Service."""
+
+    def __init__(self, ip_address="192.168.42.2") -> None:
+        """Initialize the instance."""
+        super().__init__("ZoneGroupTopology", ip_address)
+        self.GetZoneGroupState = Mock(
+            return_value={"ZoneGroupState": "<ZoneGroupState/>"}
+        )
+
+
 class SonosMockEvent:
     """Mock a sonos Event used in callbacks."""
 
@@ -301,7 +312,7 @@ class SoCoMockFactory:
             return_value=self.current_track_info
         )
         mock_soco.renderingControl = SonosMockRenderingService(ip_address)
-        mock_soco.zoneGroupTopology = SonosMockService("ZoneGroupTopology", ip_address)
+        mock_soco.zoneGroupTopology = SonosMockZoneGroupTopology(ip_address)
         mock_soco.contentDirectory = SonosMockService("ContentDirectory", ip_address)
         mock_soco.deviceProperties = SonosMockService("DeviceProperties", ip_address)
         mock_soco.deviceProperties.GetAutoplayRoomUUID = Mock(
@@ -984,6 +995,15 @@ def create_zgs_sonos_event(
     return SonosMockEvent(
         soco_1, soco_1.zoneGroupTopology, variables, zone_player_uui_ds_in_group
     )
+
+
+def set_soco_group(coordinator: MockSoCo, *members: MockSoCo) -> None:
+    """Set the group that SoCo reports for a coordinator and its members."""
+    group = Mock()
+    group.coordinator = coordinator
+    group.members = {coordinator, *members}
+    for soco in group.members:
+        soco.group = group
 
 
 def group_speakers(coordinator: MockSoCo, group_member: MockSoCo) -> None:

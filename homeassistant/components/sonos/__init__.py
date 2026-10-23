@@ -163,6 +163,8 @@ async def async_unload_entry(
             config_entry, PLATFORMS
         )
     finally:
+        if cancel_verify := config_entry.runtime_data.topology_verify_cancel:
+            cancel_verify()
         await hass.data[DATA_SONOS_DISCOVERY_MANAGER].async_shutdown()
         soco_reset()
         _LOGGER.debug("Sonos config entry unloaded: %s", config_entry.entry_id)

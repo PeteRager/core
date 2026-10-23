@@ -1,5 +1,6 @@
 """Tests for common SonosSpeaker behavior."""
 
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
@@ -11,10 +12,18 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.components.sonos import DOMAIN
 from homeassistant.components.sonos.const import SCAN_INTERVAL
+from homeassistant.components.sonos.speaker import TOPOLOGY_VERIFY_DELAY
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .conftest import MockSoCo, SonosMockEvent, group_speakers, ungroup_speakers
+from .conftest import (
+    MockSoCo,
+    SonosMockEvent,
+    create_zgs_sonos_event,
+    group_speakers,
+    set_soco_group,
+    ungroup_speakers,
+)
 
 from tests.common import (
     MockConfigEntry,
@@ -224,3 +233,70 @@ async def test_async_offline_without_subscription_lock(
         # _subscription_lock was never created
         assert await hass.config_entries.async_unload(config_entry.entry_id)
         await hass.async_block_till_done(wait_background_tasks=True)
+
+
+def _zone_group_state_reads(socos: list[MockSoCo]) -> int:
+    """Return how many times the topology was read from any speaker."""
+    return sum(soco.zoneGroupTopology.GetZoneGroupState.call_count for soco in socos)
+
+
+async def _fire_topology_verification(hass: HomeAssistant, seconds: float) -> None:
+    """Advance time to fire the topology verification timer."""
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=seconds))
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+
+async def test_member_zgs_event_verifies_topology(
+    hass: HomeAssistant, sonos_setup_two_speakers: list[MockSoCo]
+) -> None:
+    """Test the topology is verified when only a group member sends an event."""
+    soco_lr = sonos_setup_two_speakers[0]
+    soco_br = sonos_setup_two_speakers[1]
+    set_soco_group(soco_lr, soco_br)
+
+    # Only the coordinator's event updates the groups
+    event = create_zgs_sonos_event("zgs_group.xml", soco_lr, soco_br)
+    soco_br.zoneGroupTopology.subscribe.return_value._callback(event)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    state = hass.states.get("media_player.living_room")
+    assert state.attributes["group_members"] == ["media_player.living_room"]
+
+    await _fire_topology_verification(hass, TOPOLOGY_VERIFY_DELAY + 1)
+
+    assert _zone_group_state_reads(sonos_setup_two_speakers) == 1
+    for entity_id in ("media_player.living_room", "media_player.bedroom"):
+        state = hass.states.get(entity_id)
+        assert state.attributes["group_members"] == [
+            "media_player.living_room",
+            "media_player.bedroom",
+        ]
+
+
+async def test_topology_verification_is_debounced(
+    hass: HomeAssistant, sonos_setup_two_speakers: list[MockSoCo]
+) -> None:
+    """Test events arriving before the delay expires share one verification."""
+    soco_lr = sonos_setup_two_speakers[0]
+    soco_br = sonos_setup_two_speakers[1]
+    event = create_zgs_sonos_event("zgs_group.xml", soco_lr, soco_br)
+
+    soco_br.zoneGroupTopology.subscribe.return_value._callback(event)
+    await _fire_topology_verification(hass, TOPOLOGY_VERIFY_DELAY - 1)
+    assert _zone_group_state_reads(sonos_setup_two_speakers) == 0
+
+    soco_lr.zoneGroupTopology.subscribe.return_value._callback(event)
+    await _fire_topology_verification(hass, TOPOLOGY_VERIFY_DELAY + 1)
+    assert _zone_group_state_reads(sonos_setup_two_speakers) == 1
+
+
+async def test_avtransport_coordinator_event_verifies_topology(
+    hass: HomeAssistant, sonos_setup_two_speakers: list[MockSoCo]
+) -> None:
+    """Test a coordinator change in an AVTransport event verifies the topology."""
+    soco_lr = sonos_setup_two_speakers[0]
+
+    event = _create_avtransport_sonos_event("av_transport.json", soco_lr)
+    soco_lr.avTransport.subscribe.return_value._callback(event)
+    await _fire_topology_verification(hass, TOPOLOGY_VERIFY_DELAY + 1)
+
+    assert _zone_group_state_reads(sonos_setup_two_speakers) == 1

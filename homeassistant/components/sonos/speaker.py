@@ -29,7 +29,7 @@ from homeassistant.helpers.dispatcher import (
     async_dispatcher_send,
     dispatcher_send,
 )
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .alarms import SonosAlarms
@@ -74,6 +74,7 @@ if TYPE_CHECKING:
 NEVER_TIME = -1200.0
 RESUB_COOLDOWN_SECONDS = 10.0
 WAIT_FOR_GROUPS_TIMEOUT = 30.0
+TOPOLOGY_VERIFY_DELAY = 3.0
 EVENT_CHARGING = {
     "CHARGING": True,
     "NOT_CHARGING": False,
@@ -559,6 +560,7 @@ class SonosSpeaker:
         if av_transport_uri == current_track_uri and av_transport_uri.startswith(
             "x-rincon:"
         ):
+            self.async_schedule_topology_verification()
             new_coordinator_uid = av_transport_uri.split(":")[-1]
             if new_coordinator_speaker := self.data.discovered.get(new_coordinator_uid):
                 _LOGGER.debug(
@@ -901,8 +903,26 @@ class SonosSpeaker:
             name=f"sonos group update {self.zone_name}",
             eager_start=True,
         )
+        self.async_schedule_topology_verification()
 
-    def create_update_groups_coro(self, event: SonosEvent | None = None) -> Coroutine:
+    @callback
+    def async_schedule_topology_verification(self) -> None:
+        """Verify the topology after the last topology related event has settled."""
+        if self.data.topology_verify_cancel:
+            self.data.topology_verify_cancel()
+        self.data.topology_verify_cancel = async_call_later(
+            self.hass, TOPOLOGY_VERIFY_DELAY, self._async_verify_topology
+        )
+
+    async def _async_verify_topology(self, _now: datetime.datetime) -> None:
+        """Rebuild the groups from the topology read from the speakers."""
+        self.data.topology_verify_cancel = None
+        async with self.data.topology_condition:
+            await SonosSpeaker._async_refresh_topology(self.hass, self.config_entry, [])
+
+    def create_update_groups_coro(
+        self, event: SonosEvent | None = None, *, lock_held: bool = False
+    ) -> Coroutine:
         """Handle callback for topology change event."""
 
         def _get_soco_group() -> list[str]:
@@ -1016,16 +1036,24 @@ class SonosSpeaker:
 
             _LOGGER.debug("Regrouped %s: %s", self.zone_name, self.sonos_group_entities)
 
+        async def _async_apply_group_event(event: SonosEvent | None) -> None:
+            """Handle event, the topology lock must be held."""
+            group = await _async_extract_group(event)
+
+            if self.soco.uid == group[0]:
+                _async_regroup(group)
+
+                self.data.topology_condition.notify_all()
+
         async def _async_handle_group_event(event: SonosEvent | None) -> None:
             """Get async lock and handle event."""
 
+            if lock_held:
+                await _async_apply_group_event(event)
+                return
+
             async with self.data.topology_condition:
-                group = await _async_extract_group(event)
-
-                if self.soco.uid == group[0]:
-                    _async_regroup(group)
-
-                    self.data.topology_condition.notify_all()
+                await _async_apply_group_event(event)
 
         return _async_handle_group_event(event)
 
@@ -1285,20 +1313,71 @@ class SonosSpeaker:
                 while not _test_groups(groups):
                     await config_entry.runtime_data.topology_condition.wait()
         except TimeoutError:
-            group_description = "; ".join(
-                f"{group[0].zone_name}: "
-                f"{', '.join(speaker.zone_name for speaker in group)}"
-                for group in groups
+            await SonosSpeaker._async_refresh_topology(hass, config_entry, groups)
+            if not _test_groups(groups):
+                group_description = "; ".join(
+                    f"{group[0].zone_name}: "
+                    f"{', '.join(speaker.zone_name for speaker in group)}"
+                    for group in groups
+                )
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key=f"timeout_{action}",
+                    translation_placeholders={
+                        "group_description": group_description,
+                    },
+                ) from TimeoutError
+            _LOGGER.warning(
+                "Sonos %s completed but the topology update was not received,"
+                " the topology was refreshed from the speakers",
+                action,
             )
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key=f"timeout_{action}",
-                translation_placeholders={
-                    "group_description": group_description,
-                },
-            ) from TimeoutError
         any_speaker = next(iter(config_entry.runtime_data.discovered.values()))
         any_speaker.soco.zone_group_state.clear_cache()
+
+    @staticmethod
+    async def _async_refresh_topology(
+        hass: HomeAssistant,
+        config_entry: SonosConfigEntry,
+        groups: list[list[SonosSpeaker]],
+    ) -> None:
+        """Read the topology from a speaker and rebuild the groups.
+
+        SoCo answers polls from its cache while its subscriptions look active, so a
+        missed topology event is never corrected. The topology lock must be held.
+        """
+        discovered = config_entry.runtime_data.discovered
+        candidates = list(
+            dict.fromkeys([group[0] for group in groups] + list(discovered.values()))
+        )
+
+        def _read_zone_group_state() -> bool:
+            """Feed the topology read from the first reachable speaker to SoCo."""
+            for speaker in candidates:
+                soco = speaker.soco
+                try:
+                    zgs = soco.zoneGroupTopology.GetZoneGroupState()["ZoneGroupState"]
+                except (OSError, SoCoException) as err:
+                    _LOGGER.debug(
+                        "Unable to read topology from %s: %s", speaker.zone_name, err
+                    )
+                    continue
+                soco.zone_group_state.process_payload(
+                    payload=zgs, source="poll", source_ip=soco.ip_address
+                )
+                soco.zone_group_state.clear_cache()
+                return True
+            return False
+
+        if not await hass.async_add_executor_job(_read_zone_group_state):
+            return
+
+        await asyncio.gather(
+            *(
+                speaker.create_update_groups_coro(lock_held=True)
+                for speaker in discovered.values()
+            )
+        )
 
     async def async_cancel_announcement(self) -> None:
         """Cancel the current announcement audio clip."""
