@@ -925,23 +925,25 @@ class SonosSpeaker:
     ) -> Coroutine:
         """Handle callback for topology change event."""
 
-        def _get_soco_group() -> list[str]:
-            """Ask SoCo cache for existing topology."""
+        def _get_soco_group() -> list[str] | None:
+            """Ask SoCo cache for existing topology, None if it cannot place us."""
             coordinator_uid = self.soco.uid
             joined_uids = []
 
             with contextlib.suppress(OSError, SoCoException):
-                if self.soco.group and self.soco.group.coordinator:
-                    coordinator_uid = self.soco.group.coordinator.uid
-                    joined_uids = [
-                        p.uid
-                        for p in self.soco.group.members
-                        if p.uid != coordinator_uid and p.is_visible
-                    ]
+                soco_group = self.soco.group
+                if soco_group is None or soco_group.coordinator is None:
+                    return None
+                coordinator_uid = soco_group.coordinator.uid
+                joined_uids = [
+                    p.uid
+                    for p in soco_group.members
+                    if p.uid != coordinator_uid and p.is_visible
+                ]
 
             return [coordinator_uid, *joined_uids]
 
-        async def _async_extract_group(event: SonosEvent | None) -> list[str]:
+        async def _async_extract_group(event: SonosEvent | None) -> list[str] | None:
             """Extract group layout from a topology event."""
             if group := (event and getattr(event, "zone_player_uui_ds_in_group", None)):
                 assert isinstance(group, str)
@@ -1039,6 +1041,14 @@ class SonosSpeaker:
         async def _async_apply_group_event(event: SonosEvent | None) -> None:
             """Handle event, the topology lock must be held."""
             group = await _async_extract_group(event)
+
+            if group is None:
+                # Treating an unknown group as standalone would break up real groups
+                _LOGGER.debug(
+                    "%s is not in any group known to SoCo, keeping current group",
+                    self.zone_name,
+                )
+                return
 
             if self.soco.uid == group[0]:
                 _async_regroup(group)

@@ -300,3 +300,27 @@ async def test_avtransport_coordinator_event_verifies_topology(
     await _fire_topology_verification(hass, TOPOLOGY_VERIFY_DELAY + 1)
 
     assert _zone_group_state_reads(sonos_setup_two_speakers) == 1
+
+
+async def test_zgs_event_keeps_group_when_soco_has_no_group(
+    hass: HomeAssistant, sonos_setup_two_speakers: list[MockSoCo]
+) -> None:
+    """Test speakers SoCo cannot place in any group keep their current group."""
+    soco_lr = sonos_setup_two_speakers[0]
+    soco_br = sonos_setup_two_speakers[1]
+    group_speakers(soco_lr, soco_br)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    soco_lr.group = None
+    soco_br.group = None
+    # Without ZonePlayerUUIDsInGroup the group is read from SoCo
+    ungroup_speakers(soco_lr, soco_br)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    await _fire_topology_verification(hass, TOPOLOGY_VERIFY_DELAY + 1)
+
+    for entity_id in ("media_player.living_room", "media_player.bedroom"):
+        state = hass.states.get(entity_id)
+        assert state.attributes["group_members"] == [
+            "media_player.living_room",
+            "media_player.bedroom",
+        ]
